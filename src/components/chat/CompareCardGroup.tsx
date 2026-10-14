@@ -1,0 +1,140 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable'
+import { formatUsage } from '@/lib/utils'
+import { CompareCard, type CompareCardData } from './CompareCard'
+
+export type { CompareCardData }
+
+export function CompareCardGroup({
+  cards,
+  onDismiss,
+  onChoose,
+  pendingChooseCardKey,
+}: {
+  cards: CompareCardData[]
+  onDismiss: (modelId: string, cardKey: string) => void
+  onChoose: (card: CompareCardData) => void
+  // Which card (if any) has a "Choose the best" request currently in flight — shows a
+  // spinner on that one card instead of the button just silently doing nothing while
+  // the PATCH is pending (confirmed live: no loading state at all read as "did that
+  // even do anything?"). Undefined outside the persisted-cards path, where choosing
+  // isn't even possible yet (no messageId until the turn finishes).
+  pendingChooseCardKey?: string
+}) {
+  // A model that failed gets no card at all now — it used to render a full card
+  // (header, empty body, footer buttons) just to show one line of error text inside
+  // it, which reserved just as much width/space as a real response and made a
+  // 4-model row look broken rather than "3 succeeded." Splitting here means the
+  // successful cards lay out exactly as if the failed one was never requested, and
+  // the failure becomes a single plain-text line below the row instead.
+  const successCards = useMemo(() => cards.filter((c) => !c.error), [cards])
+  const failedCards = useMemo(() => cards.filter((c) => c.error), [cards])
+
+  // Explicit key order — empty until the user actually drags something, so cards
+  // start in whatever order the caller provided them. Local/display-only: reset in
+  // chat/page.tsx's session-switch effect alongside the rest of this session's
+  // compare-related state, not persisted to the backend or across reloads.
+  const [order, setOrder] = useState<string[]>([])
+
+  const orderedCards = useMemo(() => {
+    if (order.length === 0) return successCards
+    const byKey = new Map(successCards.map((c) => [c.cardKey, c]))
+    const ordered = order.map((key) => byKey.get(key)).filter((c): c is CompareCardData => !!c)
+    // A card not yet present in `order` (e.g. one just streamed in) appends at the end
+    // rather than disappearing.
+    const missing = successCards.filter((c) => !order.includes(c.cardKey))
+    return [...ordered, ...missing]
+  }, [successCards, order])
+
+  const sensors = useSensors(
+    // A small activation distance keeps a plain tap/swipe on the handle from being
+    // misread as a drag — matters most on touch, where the row also needs to keep
+    // scrolling horizontally on an ordinary swipe.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const keys = orderedCards.map((c) => c.cardKey)
+    const oldIndex = keys.indexOf(String(active.id))
+    const newIndex = keys.indexOf(String(over.id))
+    if (oldIndex === -1 || newIndex === -1) return
+
+    setOrder(arrayMove(keys, oldIndex, newIndex))
+  }
+
+  const aggregateText = useMemo(() => {
+    const usable = successCards.filter((c) => c.promptTokens != null && c.completionTokens != null)
+    if (usable.length === 0) return null
+
+    const promptTotal = usable.reduce((sum, c) => sum + (c.promptTokens ?? 0), 0)
+    const completionTotal = usable.reduce((sum, c) => sum + (c.completionTokens ?? 0), 0)
+    const costTotal = usable.reduce((sum, c) => sum + Number(c.cost ?? 0), 0)
+
+    return formatUsage(promptTotal, completionTotal, costTotal)
+  }, [successCards])
+
+  // 2-3 models: each card stretches to fill an equal share of the panel's width
+  // on anything wide enough for that to stay readable (desktop/tablet). 4 models:
+  // equal quarters would be too narrow to read comfortably there even on desktop,
+  // so those cards keep a fixed, readable width instead. Based on successCards, not
+  // the original request count — a failed model no longer takes up a card's worth
+  // of layout.
+  const fillWidth = successCards.length <= 3
+
+  return (
+    <div className="space-y-1.5">
+      {aggregateText && (
+        <p className="px-1 text-[10px] font-medium tabular-nums text-muted-foreground">
+          {cards.length} models · Total {aggregateText}
+        </p>
+      )}
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <SortableContext items={orderedCards.map((c) => c.cardKey)} strategy={horizontalListSortingStrategy}>
+          {/* overflow-x-auto unconditionally now, not just for the 4-model case — a
+              2-3 model row has a real per-card min-width (CompareCard's own fillWidth
+              comment) now too, so on a narrow screen where that min-width no longer
+              fits evenly, this is what makes the row scroll instead of the cards just
+              getting squeezed unreadably thin (confirmed live, mobile). No-op on a
+              wide screen where the cards already fit — overflow-x-auto only shows a
+              scrollbar/scrolls when content actually exceeds the container. */}
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {orderedCards.map((card) => (
+              <CompareCard
+                key={card.cardKey}
+                card={card}
+                fillWidth={fillWidth}
+                onChoose={onChoose}
+                onDismiss={onDismiss}
+                isChoosing={card.cardKey === pendingChooseCardKey}
+                // De-emphasize the rest once one card's been chosen, rather than
+                // removing them — the comparison stays visible for reference, the
+                // choice just reads clearly at a glance (confirmed as the wanted
+                // behavior over deleting the other cards outright).
+                isDeemphasized={successCards.some((c) => c.isChosen) && !card.isChosen}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      {/* One model failing must never block or visually crowd out the others — no
+          card, no reserved space, just a plain line naming which model and why,
+          once, below the whole row. The error text itself comes pre-formatted and
+          user-friendly from the backend (ChatController::friendlyProviderError). */}
+      {failedCards.length > 0 && (
+        <div className="space-y-0.5 px-1">
+          {failedCards.map((card) => (
+            <p key={card.cardKey} className="text-xs text-destructive">
+              {card.error}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

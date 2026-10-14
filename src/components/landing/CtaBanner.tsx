@@ -1,0 +1,47 @@
+'use client'
+
+import Link from 'next/link'
+import { IntNetworkSignals } from './IntNetworkSignals'
+
+export function CtaBanner() {
+  return (
+    <section className="px-6 py-10">
+      {/* max-w-[1200px] matches the real Figma frame (1200x467) exactly, per the exact
+          properties given — was max-w-5xl (1024px), and the gradient was too washed-out
+          (low-opacity primary over a light page barely reads as a gradient at all) —
+          the reference shows a fully-saturated violet-to-pink card, not a translucent tint. */}
+      <div className="mx-auto max-w-[1200px] overflow-hidden rounded-3xl bg-gradient-to-br from-violet-400 via-purple-400 to-pink-300 p-10 sm:p-14">
+        <div className="grid items-center gap-10 md:grid-cols-2">
+          <div>
+
+            <h2 className="text-balance font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              Your Best AI Workflow Starts with Alveta
+            </h2>
+            <p className="mt-3 max-w-md text-white/65">
+              Move freely across powerful AI capabilities and find the right intelligence for every idea,
+              task, and challenge.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link href="/register" className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90">
+                Let&apos;s Try Alveta
+              </Link>
+              <a href="#models" className="rounded-full border border-white/30 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10">
+                Explore Models
+              </a>
+            </div>
+          </div>
+
+          {/* relative wrapper sized to the image (not the grid cell) so the signals
+              overlay's absolute inset-0 lines up exactly with the rendered artwork,
+              not the wider column it sits in. */}
+          <div className="relative mx-auto w-full max-w-xs">
+            {/* eslint-disable-next-line @next/next/no-img-element -- decorative, fixed
+                local asset; not worth Next/Image's runtime overhead here. */}
+            <img src="/Int.svg" alt="" className="w-full" />
+            <IntNetworkSignals />
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}

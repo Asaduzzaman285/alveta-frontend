@@ -1,0 +1,177 @@
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { SkeletonTableRows } from '@/components/ui/Skeleton'
+import apiClient from '@/lib/api-client'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import type { Invoice, Receipt, Transaction } from '@/types'
+
+const STATUS_STYLES: Record<string, string> = {
+  completed: 'text-green-600',
+  paid: 'text-green-600',
+  pending: 'text-yellow-600',
+  failed: 'text-destructive',
+  refunded: 'text-muted-foreground',
+}
+
+// Transaction/Receipt `type` is raw backend data (snake_case, e.g.
+// 'wallet_topup') — a plain underscore-to-space render would surface the old
+// "wallet" wording straight from the database. Backend field names are
+// out of scope for this customer-copy rename (see admin panel, which keeps
+// them), so this maps just the one value that would otherwise leak it.
+function formatTransactionType(type: string): string {
+  if (type === 'wallet_topup') return 'AI credit purchase'
+  return type.replace(/_/g, ' ')
+}
+
+/**
+ * A transaction/invoice/receipt is a frozen historical fact, not an ongoing
+ * balance — it must always show the real currency and amount that was
+ * actually charged, never a live reconversion through today's exchange rate
+ * (that's what useDisplayCurrency is for, and it's the wrong tool here).
+ * transaction.amount/currency are always the internal USD bookkeeping value
+ * even for an MFS (bKash/Upay) purchase (payment-service's own convention) —
+ * the real BDT amount charged lives in metadata.amount_bdt. Confirmed live:
+ * before this, a real ৳1 bKash payment displayed as "BDT 202.13" here — the
+ * $1 catalog price re-converted through today's unrelated exchange rate, with
+ * no connection to what was actually paid. Upay shares the exact same
+ * metadata shape, so it shares this same fix.
+ */
+function transactionAmount(t: Transaction): string {
+  if ((t.gateway === 'bkash' || t.gateway === 'upay') && t.metadata?.amount_bdt != null) {
+    return formatCurrency(t.metadata.amount_bdt, 'BDT')
+  }
+  return formatCurrency(t.amount, t.currency)
+}
+
+/** Shared by the Settings modal's Billing tab — extracted from the old standalone /billing route. */
+export function BillingView() {
+  const { data: transactions, isLoading: txLoading } = useQuery({
+    queryKey: ['transactions'],
+    queryFn: async () => (await apiClient.get<{ transactions: Transaction[] }>('/api/v1/transactions')).data.transactions,
+  })
+
+  const { data: invoices, isLoading: invLoading } = useQuery({
+    queryKey: ['invoices'],
+    queryFn: async () => (await apiClient.get<{ invoices: Invoice[] }>('/api/v1/invoices')).data.invoices,
+  })
+
+  const { data: receipts, isLoading: rcpLoading } = useQuery({
+    queryKey: ['receipts'],
+    queryFn: async () => (await apiClient.get<{ receipts: Receipt[] }>('/api/v1/receipts')).data.receipts,
+  })
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle>Transactions</CardTitle></CardHeader>
+        <CardContent>
+          {txLoading ? (
+            <table className="w-full text-sm">
+              <tbody><SkeletonTableRows columns={5} /></tbody>
+            </table>
+          ) : !transactions?.length ? (
+            <p className="text-sm text-muted-foreground">No transactions yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground">
+                  <th className="pb-2 font-medium">Date</th>
+                  <th className="pb-2 font-medium">Type</th>
+                  <th className="pb-2 font-medium">Gateway</th>
+                  <th className="pb-2 font-medium text-right">Amount</th>
+                  <th className="pb-2 font-medium text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((t) => (
+                  <tr key={t.id} className="border-b border-border last:border-0">
+                    <td className="py-2">{formatDate(t.created_at)}</td>
+                    <td className="py-2 capitalize">{formatTransactionType(t.type)}</td>
+                    <td className="py-2 capitalize">{t.gateway}</td>
+                    <td className="py-2 text-right">{transactionAmount(t)}</td>
+                    <td className={`py-2 text-right capitalize ${STATUS_STYLES[t.status] ?? ''}`}>
+                      {t.status}
+                      {t.error_message && (
+                        <span className="block text-xs text-muted-foreground" title={t.error_message}>failed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Invoices</CardTitle></CardHeader>
+        <CardContent>
+          {invLoading ? (
+            <table className="w-full text-sm">
+              <tbody><SkeletonTableRows columns={4} /></tbody>
+            </table>
+          ) : !invoices?.length ? (
+            <p className="text-sm text-muted-foreground">No invoices yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground">
+                  <th className="pb-2 font-medium">Invoice #</th>
+                  <th className="pb-2 font-medium">Date</th>
+                  <th className="pb-2 font-medium text-right">Total</th>
+                  <th className="pb-2 font-medium text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="border-b border-border last:border-0">
+                    <td className="py-2 font-mono text-xs">{inv.invoice_number}</td>
+                    <td className="py-2">{formatDate(inv.issued_at)}</td>
+                    <td className="py-2 text-right">{formatCurrency(inv.total_amount, inv.currency)}</td>
+                    <td className={`py-2 text-right capitalize ${STATUS_STYLES[inv.status] ?? ''}`}>{inv.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Receipts</CardTitle></CardHeader>
+        <CardContent>
+          {rcpLoading ? (
+            <table className="w-full text-sm">
+              <tbody><SkeletonTableRows columns={4} /></tbody>
+            </table>
+          ) : !receipts?.length ? (
+            <p className="text-sm text-muted-foreground">No receipts yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground">
+                  <th className="pb-2 font-medium">Receipt #</th>
+                  <th className="pb-2 font-medium">Date</th>
+                  <th className="pb-2 font-medium">Type</th>
+                  <th className="pb-2 font-medium text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receipts.map((r) => (
+                  <tr key={r.id} className="border-b border-border last:border-0">
+                    <td className="py-2 font-mono text-xs">{r.receipt_number}</td>
+                    <td className="py-2">{formatDate(r.issued_at)}</td>
+                    <td className="py-2 capitalize">{formatTransactionType(r.type)}</td>
+                    <td className="py-2 text-right">{formatCurrency(r.amount, r.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

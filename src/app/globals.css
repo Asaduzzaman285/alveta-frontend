@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* "Violet Ink" — background/card are no longer both pure white (0 0% 100%/0 0% 100%),
+       so cards now visibly float on a faint lavender-tinted page instead of blending into it. */
+    --background: 258 45% 98%;
+    --foreground: 258 25% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 258 25% 12%;
+    --primary: 258 78% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 258 35% 95%;
+    --secondary-foreground: 258 25% 15%;
+    --muted: 258 30% 95%;
+    --muted-foreground: 258 10% 45%;
+    --accent: 258 35% 95%;
+    --accent-foreground: 258 25% 15%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 258 30% 91%;
+    --input: 258 30% 91%;
+    --ring: 258 78% 56%;
+    --radius: 0.5rem;
+
+    /* Chart palette — chart-1 now matches the violet primary; the rest span outward
+       (magenta, pink, blue, amber) so multi-category charts stay distinct and legible
+       without just repeating --primary. Legible on both light and dark card backgrounds. */
+    --chart-1: 258 78% 60%;
+    --chart-2: 291 70% 62%;
+    --chart-3: 330 75% 62%;
+    --chart-4: 200 70% 50%;
+    --chart-5: 38 92% 55%;
+
+    /* Semantic status tokens — soft-background pills/strips (KPI status, trend, dashboard
+       stat-rows). Previously ad hoc (Badge.tsx hardcoded green-600/yellow-600); formalized
+       here so new status UI is dark-mode-aware like the rest of the palette. */
+    --success: 152 60% 32%;
+    --success-soft: 152 55% 94%;
+    --warning: 32 80% 40%;
+    --warning-soft: 38 90% 94%;
+    --info: 210 70% 45%;
+    --info-soft: 210 70% 95%;
+  }
+
+  .dark {
+    --background: 258 45% 8%;
+    --foreground: 258 15% 95%;
+    --card: 258 40% 12%;
+    --card-foreground: 258 15% 95%;
+    --primary: 258 85% 68%;
+    --primary-foreground: 258 45% 10%;
+    --secondary: 258 30% 18%;
+    --secondary-foreground: 258 15% 95%;
+    --muted: 258 30% 18%;
+    --muted-foreground: 258 15% 65%;
+    --accent: 258 30% 18%;
+    --accent-foreground: 258 15% 95%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 258 30% 20%;
+    --input: 258 30% 20%;
+    --ring: 258 85% 68%;
+
+    --success: 152 50% 55%;
+    --success-soft: 152 30% 16%;
+    --warning: 32 75% 60%;
+    --warning-soft: 32 40% 16%;
+    --info: 210 70% 65%;
+    --info-soft: 210 40% 18%;
+  }
+
+  /* Private chats only — scoped to the chat page's root wrapper, not a global theme
+     toggle. Deliberately zero-saturation neutral gray (unlike .dark above, which is
+     still violet-tinted) so it reads as its own distinct "incognito" identity rather
+     than just an inverted version of the normal branding — --primary in particular
+     is plain light gray, not violet, so buttons/user-bubbles/focus rings carry no
+     brand color at all while inside a private chat.
+     Lightened from the original near-black (background 7%/card 11%, an 4-point gap)
+     after live feedback that it read as flat, low-contrast "pure black" — sidebar and
+     card boundaries were barely distinguishable from the page behind them. Background/
+     card/border are spaced further apart now (14/21/29) so panel edges are actually
+     visible, and muted-foreground is bumped for legibility, while staying clearly
+     darker and less saturated than .dark so it still reads as its own identity. */
+  .incognito {
+    --background: 0 0% 14%;
+    --foreground: 0 0% 94%;
+    --card: 0 0% 21%;
+    --card-foreground: 0 0% 94%;
+    --primary: 0 0% 82%;
+    --primary-foreground: 0 0% 12%;
+    --secondary: 0 0% 26%;
+    --secondary-foreground: 0 0% 94%;
+    --muted: 0 0% 26%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 0 0% 28%;
+    --accent-foreground: 0 0% 94%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 96%;
+    --border: 0 0% 29%;
+    --input: 0 0% 29%;
+    --ring: 0 0% 55%;
+
+    --success: 152 40% 45%;
+    --success-soft: 152 20% 16%;
+    --warning: 32 60% 50%;
+    --warning-soft: 32 25% 16%;
+    --info: 210 40% 55%;
+    --info-soft: 210 25% 18%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+  h1, h2, h3, h4 { font-family: var(--font-display); }
+}
+
+@layer utilities {
+  /* Shimmer skeleton — a light sweep across a bg-muted block, replacing the flatter
+     animate-pulse fade so loading cards read as "actively loading" rather than just dim. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: hsl(var(--muted));
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.08), transparent);
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after { animation: none; }
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
